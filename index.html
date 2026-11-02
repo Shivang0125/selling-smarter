@@ -1,0 +1,930 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rescue Ticket</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="Rescue Ticket: a field-sales prototype that catches slow-moving stock at the sales visit and matches it to verified unmet demand before the last date to act. Illustrative data.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bodoni+Moda:opsz,wght@6..96,600;6..96,700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<style>
+/* Layout: one ticket travels across three views. Rep visit (phone beside live calculation), BDE desk (queue beside ticket), Rule checks (table). */
+:root{
+  --paper:#FAF9F7; --surface:#FFFFFF; --sunk:#F0EEEA; --ink:#1A1918; --muted:#5E5A54; --line:#DCD8D1;
+  --gold:#7D5E2E; --gold-fill:#B08D57; --gold-soft:#F4ECDF; --on-gold:#1A1918;
+  --risk:#A33B2B; --risk-soft:#F7E4E0; --ok:#2E6A4E; --ok-soft:#E3F0E9; --move:#8C8780;
+  --display:"Bodoni Moda","Bodoni 72","Didot",Georgia,serif;
+  --sans:"IBM Plex Sans","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --r:12px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#131211; --surface:#1C1B19; --sunk:#262420; --ink:#EDEAE4; --muted:#A8A197; --line:#3B3732;
+    --gold:#D7B97F; --gold-fill:#B08D57; --gold-soft:#2F291E; --on-gold:#1A1918;
+    --risk:#E2826F; --risk-soft:#3B231E; --ok:#80C6A3; --ok-soft:#1C2F26; --move:#77726A;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#131211; --surface:#1C1B19; --sunk:#262420; --ink:#EDEAE4; --muted:#A8A197; --line:#3B3732;
+  --gold:#D7B97F; --gold-fill:#B08D57; --gold-soft:#2F291E; --on-gold:#1A1918;
+  --risk:#E2826F; --risk-soft:#3B231E; --ok:#80C6A3; --ok-soft:#1C2F26; --move:#77726A;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:0 48px}
+.wrap{max-width:1240px;margin:0 auto}
+h1,h2,h3{text-wrap:balance;margin:0}
+.num,td,.calc,.ledger{font-variant-numeric:tabular-nums}
+.mono{font-family:var(--mono);font-size:.86em;letter-spacing:.01em}
+.muted{color:var(--muted)}
+.eyebrow{font-size:11.5px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+button,input,select{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--gold-fill);outline-offset:2px}
+
+/* header */
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:14px 28px;padding-block:24px 16px;border-bottom:1px solid var(--line)}
+.brand h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,4.2vw,44px);line-height:1;letter-spacing:-.01em}
+.brand p{margin:8px 0 0;color:var(--muted);font-size:13.5px;max-width:62ch}
+.views{display:flex;gap:4px;background:var(--sunk);padding:4px;border-radius:10px;flex-wrap:wrap}
+.views a{display:flex;gap:8px;align-items:center;padding:8px 14px;border-radius:7px;text-decoration:none;color:var(--muted);font-weight:500;font-size:14px}
+.views a b{font-family:var(--mono);font-weight:500;font-size:12px;color:var(--gold)}
+.views a[aria-current="page"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.lead{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px 20px;padding-block:16px 18px}
+.lead p{margin:0;max-width:78ch}
+.ghost{background:none;border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer;color:var(--muted)}
+.ghost:hover{color:var(--ink);border-color:var(--ink)}
+
+/* chips */
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:500;line-height:1;padding:5px 9px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+.chip::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.t-gold{color:var(--gold);background:var(--gold-soft);border-color:transparent}
+.t-risk{color:var(--risk);background:var(--risk-soft);border-color:transparent}
+.t-ok{color:var(--ok);background:var(--ok-soft);border-color:transparent}
+.t-ink{color:var(--ink);background:var(--sunk);border-color:transparent}
+.t-muted{color:var(--muted);background:var(--sunk);border-color:transparent}
+
+/* buttons */
+.btn{border:1px solid var(--ink);background:var(--ink);color:var(--paper);border-radius:9px;padding:9px 14px;font-weight:600;font-size:14px;cursor:pointer}
+.btn.alt{background:transparent;color:var(--ink)}
+.btn.warn{background:transparent;color:var(--risk);border-color:var(--risk)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+
+/* rep view */
+.rep{display:grid;gap:24px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:920px){.rep{grid-template-columns:minmax(0,400px) minmax(0,1fr)}}
+.phone{background:var(--surface);border:1px solid var(--line);border-radius:30px;padding:14px;max-width:400px;width:100%;margin-inline:auto;box-shadow:0 18px 40px -28px rgba(0,0,0,.35)}
+.notch{width:96px;height:6px;border-radius:6px;background:var(--sunk);margin:2px auto 12px}
+.visit-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;padding:2px 4px 12px;border-bottom:1px solid var(--line)}
+.visit-head h2{font-size:17px;font-weight:600}
+.visit-head p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
+.card{border:1px solid var(--line);border-radius:var(--r);padding:12px;margin-top:12px;background:var(--surface)}
+.card h3{font-size:15px;font-weight:600}
+.prod{display:flex;gap:12px;align-items:center}
+.swatch{width:44px;height:44px;border-radius:50%;flex:none;background:radial-gradient(circle at 35% 30%,#E9C3A2,#C99572 60%,#A8755A);border:1px solid var(--line)}
+.swatch.kajal{background:radial-gradient(circle at 35% 30%,#555,#1d1d1d 65%)}
+.ctx{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.seg{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:10px}
+.seg button{border:1px solid var(--line);background:var(--surface);border-radius:9px;padding:9px 8px;font-size:14px;font-weight:500;cursor:pointer}
+.seg button[aria-pressed="true"]{border-color:var(--ink);background:var(--ink);color:var(--paper)}
+.field{display:grid;gap:4px;margin-top:10px}
+.field label{font-size:12.5px;color:var(--muted);font-weight:500}
+.field input,.field select{border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--paper);min-width:0;width:100%}
+.two{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.check{display:flex;gap:8px;align-items:flex-start;margin-top:10px;font-size:13.5px}
+.check input{margin-top:3px;accent-color:var(--gold-fill)}
+.instr{margin-top:10px;padding:10px;border-radius:9px;background:var(--gold-soft);font-size:13.5px}
+.instr.risk{background:var(--risk-soft)}
+.order li{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line);font-size:13.5px}
+.order ul{list-style:none;margin:6px 0 0;padding:0}
+.order s{color:var(--muted)}
+.order .why{display:block;font-size:12px;color:var(--muted)}
+.submit{margin-top:14px;display:grid;gap:8px}
+.state{font-size:12.5px;color:var(--muted);display:flex;gap:8px;flex-wrap:wrap}
+.state span[aria-current="step"]{color:var(--ink);font-weight:600}
+
+.calc{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;min-width:0}
+.calc h2{font-family:var(--display);font-size:24px;font-weight:600}
+.calc table{width:100%;border-collapse:collapse;margin-top:12px;font-size:14px}
+.calc td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+.calc td:last-child{text-align:right;font-weight:600;white-space:nowrap}
+.calc .f{display:block;font-family:var(--mono);font-size:12px;color:var(--muted)}
+.big{display:flex;flex-wrap:wrap;gap:22px;margin-top:16px}
+.big div{min-width:0}
+.big strong{display:block;font-family:var(--display);font-size:40px;line-height:1;font-weight:700}
+.big .r strong{color:var(--risk)}
+.big .g strong{color:var(--gold)}
+.big span{font-size:12.5px;color:var(--muted)}
+.match{margin-top:16px;padding:12px;border-radius:10px;background:var(--sunk);font-size:14px}
+
+/* desk */
+.desk{display:grid;gap:20px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:980px){.desk{grid-template-columns:minmax(0,330px) minmax(0,1fr)}}
+.queue{display:grid;gap:14px;align-content:start}
+.queue h3{margin-bottom:6px}
+.qitem{display:grid;gap:6px;text-align:left;width:100%;border:1px solid var(--line);background:var(--surface);border-radius:var(--r);padding:12px;cursor:pointer}
+.qitem[aria-current="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink)}
+.qtop{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.qitem .p{font-weight:600;font-size:14.5px}
+.qitem .s{font-size:12.5px;color:var(--muted)}
+.ticket{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px;min-width:0}
+.thead{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px 16px;align-items:flex-start;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.thead h2{font-family:var(--display);font-size:clamp(24px,3vw,30px);font-weight:700;line-height:1.1}
+.thead p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
+.sec{padding-block:16px;border-bottom:1px solid var(--line)}
+.sec:last-child{border-bottom:0;padding-bottom:0}
+.sec > h3{font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.tl{position:relative;padding-top:26px;padding-bottom:22px}
+.tl-bar{display:flex;height:14px;border-radius:4px;overflow:hidden;background:var(--sunk)}
+.tl-bar i{display:block;height:100%}
+.tl .flag{position:absolute;top:0;font-size:12.5px;font-weight:600;white-space:nowrap}
+.tl .flag.mark::after{content:"";position:absolute;top:20px;width:2px;height:22px;background:var(--ink)}
+.tl .flag.l::after{left:0}
+.tl .flag.rgt::after{right:0}
+.tl .end{position:absolute;bottom:0;right:0;font-size:12.5px;color:var(--muted)}
+.tl .start{position:absolute;bottom:0;left:0;font-size:12.5px;color:var(--muted)}
+.legend{display:grid;gap:4px;font-size:13px;margin-top:4px}
+.legend span{display:flex;gap:8px;align-items:center}
+.legend i{width:12px;height:12px;border-radius:3px;flex:none}
+.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:10px 18px;margin:0}
+.facts div{min-width:0}
+.facts dt{font-size:12px;color:var(--muted);font-weight:500}
+.facts dd{margin:2px 0 0;font-size:14px}
+.gates{display:flex;flex-wrap:wrap;gap:6px}
+.gate{display:inline-flex;gap:6px;align-items:center;border-radius:8px;padding:6px 10px;font-size:13px;border:1px solid var(--line)}
+.gate b{font-weight:600}
+.gate.ok{border-color:transparent;background:var(--ok-soft);color:var(--ok)}
+.gate.no{border-color:transparent;background:var(--risk-soft);color:var(--risk)}
+.gate small{color:var(--muted);font-size:12px}
+.reco{margin-top:12px;font-size:14.5px}
+.decide{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-top:12px}
+.decide .field{margin:0;width:130px}
+.blocked{margin-top:10px;font-size:13.5px;color:var(--risk)}
+.steps{display:grid;gap:8px;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr))}
+.step{border:1px solid var(--line);border-radius:10px;padding:10px;display:grid;gap:8px;align-content:space-between;font-size:13.5px}
+.step.done{background:var(--ok-soft);border-color:transparent}
+.step.done .btn{display:none}
+.step em{font-style:normal;font-size:12px;color:var(--ok);font-weight:600}
+.outcome{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end}
+.outcome .field{margin:0;width:160px}
+.result{margin-top:10px;font-size:14px}
+.log{list-style:none;margin:0;padding:0;font-size:13px;display:grid;gap:6px}
+.log li{display:grid;grid-template-columns:52px minmax(0,1fr);gap:10px}
+.log time{font-family:var(--mono);font-size:12px;color:var(--muted)}
+
+/* rules */
+.rules{display:grid;gap:20px;grid-template-columns:minmax(0,1fr)}
+@media (min-width:980px){.rules{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr)}}
+.tablebox{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.tablebox table{width:100%;border-collapse:collapse;font-size:14px;min-width:520px}
+.tablebox th,.tablebox td{text-align:left;padding:10px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+.tablebox th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.tablebox tr:last-child td{border-bottom:0}
+.pass{color:var(--ok);font-weight:600}
+.fail{color:var(--risk);font-weight:600}
+.formulas{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px;display:grid;gap:12px;align-content:start}
+.formulas h2{font-family:var(--display);font-size:24px;font-weight:600}
+.formulas p{margin:0;font-size:14px}
+.formulas code{font-family:var(--mono);font-size:12.5px;display:block;background:var(--sunk);padding:8px 10px;border-radius:8px;margin-top:4px;white-space:normal}
+footer{margin-top:36px;padding-top:14px;border-top:1px solid var(--line);font-size:12.5px;color:var(--muted);display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
+@media (prefers-reduced-motion:no-preference){.qitem,.btn,.seg button{transition:background-color .15s,border-color .15s,color .15s}}
+
+/* v2 additions: review banner, quality panel, simulated verification, history */
+.banner{margin-top:12px;padding:12px;border-radius:10px;background:var(--risk-soft);color:var(--ink);font-size:14px;display:grid;gap:10px}
+.banner b{color:var(--risk)}
+.qpanel{margin-top:12px;padding:12px;border-radius:10px;border:1px dashed var(--risk);display:grid;gap:10px;font-size:14px}
+.qpanel .eyebrow{color:var(--risk)}
+.sim{display:inline-block;font-size:11.5px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--gold);background:var(--gold-soft);padding:3px 8px;border-radius:6px}
+.hist{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:4px;font-size:13px}
+.hist li{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dashed var(--line);padding-bottom:4px}
+.outcome .field.wide{width:min(100%,330px)}
+.demo-date{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.paused{font-size:13px;color:var(--risk);margin:8px 0 0}
+.note{font-size:12.5px;color:var(--muted);margin:8px 0 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <p class="eyebrow">Selling Smarter · field prototype</p>
+      <h1>Rescue Ticket</h1>
+      <p>Catch slow-moving stock at the sales visit, match it to verified unmet demand, and act before the last date to act. Illustrative data; <span class="demo-date">demo date 6 Nov 2026</span>.</p>
+    </div>
+    <nav class="views" aria-label="Views">
+      <a href="#visit" data-view="visit"><b>1</b>Rep visit</a>
+      <a href="#desk" data-view="desk"><b>2</b>BDE desk</a>
+      <a href="#rules" data-view="rules"><b>3</b>Rule checks</a>
+    </nav>
+  </header>
+
+  <main id="app"></main>
+
+  <footer>
+    <span>Prototype for the Selling Smarter case competition. All stores, products and figures are illustrative; not connected to any company system.</span>
+    <span>Rules are transparent and deterministic; no forecasting model.</span>
+  </footer>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------- dates and labels ----------------
+  var DAY = 86400000;
+  function d(y, m, day) { return Date.UTC(y, m - 1, day); }
+  var TODAY = d(2026, 11, 6);
+  var MON = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  function fdate(t) { var x = new Date(t); return x.getUTCDate() + " " + MON[x.getUTCMonth()] + " " + x.getUTCFullYear(); }
+  function fshort(t) { var x = new Date(t); return x.getUTCDate() + " " + MON[x.getUTCMonth()]; }
+  function between(a, b) { return Math.round((b - a) / DAY); }
+  // Cosmetics Rules 2020, 2025 amendment: "use before MM/YYYY" ends before that month starts;
+  // "date of expiry MM/YYYY" runs to the end of that month.
+  function lastUse(label) {
+    if (!label || label.kind === "unreadable") return null;
+    if (label.kind === "useBefore") return d(label.y, label.m, 1) - DAY;
+    var ny = label.m === 12 ? label.y + 1 : label.y, nm = label.m === 12 ? 1 : label.m + 1;
+    return d(ny, nm, 1) - DAY;
+  }
+  function labelText(label) {
+    if (!label || label.kind === "unreadable") return "Label unreadable";
+    return (label.kind === "useBefore" ? "Use before " : "Expiry ") + (label.m < 10 ? "0" : "") + label.m + "/" + label.y;
+  }
+  function cutoffOf(t) { var lu = lastUse(t.label); return lu == null ? null : lu - t.allowance * DAY; }
+  function windowOf(t) { var c = cutoffOf(t); return c == null ? 0 : Math.max(0, between(TODAY, c)); }
+
+  // ---------------- illustrative tickets ----------------
+  // r and rB are conservative velocities in units a week; L is days to verify, approve, collect and deliver.
+  // purchases90 is the retailer's documented net purchases over the prior 90 days; unitValue is the net
+  // documented purchase value per unit, which sets the exchange credit and the 10% cap.
+  var BASE = [
+    { id: "RR-001", product: "Foundation, shade 220, 30 ml", batch: "B2611", origin: "Store A", dest: "Store B",
+      label: { kind: "useBefore", m: 2, y: 2027 }, allowance: 30, r: 3,
+      obs: [ { status: "verified", count: 40, photo: true, at: "30 Oct", who: "Rep" },
+             { status: "verified", count: 40, photo: true, at: "6 Nov 10:33", who: "Rep" } ],
+      reported: 15, supported: 12, inbound: 0, dist: 0, rB: 3, L: 7,
+      purchases90: 62000, unitValue: 420, lossPerUnit: 300, execCost: 600, demandId: "DEM-B-220",
+      demandEvidence: "Shelf gap seen and an unfilled distributor order",
+      opened: "Opened from today’s visit at Store A", hold: false, holdReason: "" },
+    { id: "RR-002", product: "Matte lipstick, shade 312", batch: "L0907", origin: "Store C", dest: "Store D",
+      label: { kind: "useBefore", m: 3, y: 2027 }, allowance: 45, r: 2,
+      obs: [ { status: "verified", count: 30, photo: true, at: "5 Nov 16:10", who: "Rep" } ],
+      reported: 14, supported: 12, inbound: 0, dist: 5, rB: 3, L: 6,
+      purchases90: 48000, unitValue: 350, lossPerUnit: 250, execCost: 450, demandId: "DEM-D-312",
+      demandEvidence: "Unfilled order and recorded sales adjusted for days out of stock",
+      opened: "Opened yesterday at Store C", hold: false, holdReason: "" },
+    { id: "RR-003", product: "Hydrating serum, 30 ml", batch: "S1408", origin: "Store E", dest: "Store F",
+      label: { kind: "useBefore", m: 2, y: 2027 }, allowance: 30, r: 3,
+      obs: [ { status: "verified", count: 36, photo: true, at: "4 Nov 11:20", who: "Rep" } ],
+      reported: 12, supported: 12, inbound: 0, dist: 0, rB: 1, L: 7,
+      purchases90: 80000, unitValue: 520, lossPerUnit: 400, execCost: 600, demandId: "DEM-F-S30",
+      demandEvidence: "Unfilled order; Store F sells this serum slowly",
+      opened: "Opened two days ago at Store E", hold: false, holdReason: "" },
+    { id: "RR-004", product: "Repair shampoo, 340 ml", batch: "H0315", origin: "Store G", dest: "Store H",
+      label: { kind: "unreadable" }, labelOnRelease: { kind: "expiry", m: 3, y: 2027 }, allowance: 30, r: 1,
+      obs: [ { status: "damaged", count: 18, photo: true, at: "6 Nov 09:40", who: "Rep" } ],
+      reported: 8, supported: 6, inbound: 0, dist: 0, rB: 2, L: 7,
+      purchases90: 30000, unitValue: 280, lossPerUnit: 150, execCost: 400, demandId: "DEM-H-RS",
+      demandEvidence: "Shelf gap seen",
+      opened: "Opened today at Store G: damp cartons, label unreadable", hold: true, holdReason: "Damp cartons and an unreadable label" }
+  ];
+
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
+  function fmt(n) { return Number(n).toLocaleString("en-IN"); }
+  function weeksToDays(units, perWeek) { return (units > 0 && perWeek > 0) ? Math.ceil(units * 7 / perWeek) : 0; }
+  var ACTIVE = ["reserved", "collected", "inspected", "delivered", "partial"];
+
+  // ---------------- store ----------------
+  function newStore() {
+    var st = { T: {}, ledger: {}, clock: 10 * 60 + 36 };
+    BASE.forEach(function (b) {
+      var t = clone(b);
+      t.state = "open"; t.approvedQ = null; t.approvedDist = null; t.qOverride = null;
+      t.sold = 0; t.disposed = 0; t.sales = []; t.review = null; t.closedHow = ""; t.log = [];
+      st.T[t.id] = t;
+    });
+    seedLog(st);
+    return st;
+  }
+  function stamp(st) { st.clock += 3; var h = Math.floor(st.clock / 60), m = st.clock % 60; return (h < 10 ? "0" : "") + h + ":" + (m < 10 ? "0" : "") + m; }
+  function slog(st, id, who, what) { st.T[id].log.push({ t: stamp(st), who: who, what: what }); }
+  function seedLog(st) {
+    var L = function (id, t, who, what) { st.T[id].log.push({ t: t, who: who, what: what }); };
+    L("RR-001", "10:33", "Rep", "Counted 40 sealed units, batch B2611, label photo attached");
+    L("RR-001", "10:34", "System", "Matched to Store B demand; distributor checked: 0 eligible");
+    L("RR-002", "16:12", "System", "Distributor holds 5 eligible units for Store D; they are allocated first");
+    L("RR-003", "11:22", "System", "Store F sells 1 a week: 12 units fail the time gate");
+    L("RR-004", "09:40", "Rep", "Reported damp cartons; label unreadable; units segregated");
+    L("RR-004", "09:41", "System", "Quality hold raised; commercial actions blocked until quality decides");
+  }
+
+  function lastVerified(t) { for (var i = t.obs.length - 1; i >= 0; i--) if (t.obs[i].status === "verified") return t.obs[i]; return null; }
+  function currentObs(t) { return t.obs[t.obs.length - 1]; }
+
+  // ---------------- rules ----------------
+  function compute(t) {
+    var W = windowOf(t), cutoff = cutoffOf(t);
+    var cur = currentObs(t), lv = lastVerified(t);
+    var Q = lv ? lv.count : 0;
+    var countOK = cur.status === "verified" && !!cur.photo;
+    var labelOK = !!t.label && t.label.kind !== "unreadable";
+    var localCap = Math.floor(t.r * W / 7);
+    var atRisk = Math.max(0, Q - localCap);
+    var corroborated = Math.min(t.reported, t.supported);
+    var need = Math.max(0, corroborated - t.inbound);
+    var destWindow = Math.max(0, W - t.L);
+    var destCapTime = t.rB > 0 ? Math.floor(t.rB * destWindow / 7) : 0;
+    var capValue = Math.floor(0.10 * t.purchases90);
+    var capUnits = Math.floor(capValue / t.unitValue);
+    var locked = t.approvedQ != null;
+    // Distributor stock is served first and uses destination selling capacity too.
+    var distAlloc = locked ? t.approvedDist : Math.min(t.dist, need, destCapTime);
+    var residualNeed = Math.max(0, need - distAlloc);
+    var destRoom = Math.max(0, destCapTime - distAlloc);
+    var ask = Math.max(0, Math.min(atRisk, residualNeed, capUnits));
+    var feasible = Math.min(ask, destRoom);
+    var q = locked ? t.approvedQ : (t.qOverride != null ? Math.max(0, Math.min(t.qOverride, feasible)) : feasible);
+    var destUnits = distAlloc + q;
+    var destDays = weeksToDays(destUnits, t.rB);
+    var lastDate = W - destDays - t.L;
+    var askLast = W - weeksToDays(distAlloc + ask, t.rB) - t.L;
+    var value = q > 0 ? q * t.lossPerUnit - t.execCost : 0;
+    var traceWhy = !labelOK ? "label unreadable" : countOK ? "count and label verified" :
+      cur.status === "unverified" ? "count unverified" : cur.status === "notfound" ? "stock not found" :
+      cur.status === "damaged" ? "damage reported" : "label photo missing";
+    var gates = [
+      { k: "Condition", ok: !t.hold, why: t.hold ? "quality hold" : "sealed, eligible" },
+      { k: "Traceability", ok: labelOK && countOK, why: traceWhy },
+      { k: "Time left", ok: q > 0 && lastDate >= 0, why: q > 0 ? (lastDate >= 0 ? lastDate + " days of slack" : "misses cutoff") : (W === 0 ? "cutoff not set" : "no feasible units") },
+      { k: "Corroborated demand", ok: residualNeed > 0, why: residualNeed > 0 ? residualNeed + " units after distributor" : "none left after distributor" },
+      { k: "Incremental value", ok: value > 0, why: value > 0 ? "₹" + fmt(value) + " expected" : "not positive" }
+    ];
+    return { W: W, cutoff: cutoff, cur: cur, lv: lv, Q: Q, countOK: countOK, labelOK: labelOK, localCap: localCap,
+      atRisk: atRisk, corroborated: corroborated, need: need, destCapTime: destCapTime, capValue: capValue,
+      capUnits: capUnits, locked: locked, distAlloc: distAlloc, residualNeed: residualNeed, destRoom: destRoom,
+      ask: ask, feasible: feasible, q: q, destUnits: destUnits, destDays: destDays, lastDate: lastDate,
+      askLast: askLast, value: value, gates: gates, pass: gates.every(function (g) { return g.ok; }),
+      reduced: !locked && feasible < ask, capBinds: capUnits < Math.min(atRisk, residualNeed) };
+  }
+
+  function reserve(book, demandId, qty, available) {
+    var used = book[demandId] || 0;
+    if (qty < 0 || used + qty > available) return false;
+    book[demandId] = used + qty;
+    return true;
+  }
+  function releaseAll(st, t) {
+    if (t.approvedQ == null) return;
+    var amt = (t.approvedQ || 0) + (t.approvedDist || 0);
+    st.ledger[t.demandId] = Math.max(0, (st.ledger[t.demandId] || 0) - amt);
+  }
+
+  // ---------------- workflow actions (shared by the screens and the rule checks) ----------------
+  function ok(msg) { return { ok: true, msg: msg || "" }; }
+  function no(msg) { return { ok: false, msg: msg }; }
+
+  // A rep observation never resets a ticket and never clears a quality hold.
+  function observe(st, id, o) {
+    var t = st.T[id], before = lastVerified(t);
+    var entry = { status: o.status, count: (o.status === "verified" || o.status === "damaged") ? Math.max(0, Number(o.count) || 0) : null,
+      photo: !!o.photo, at: "6 Nov " + stamp(st), who: "Rep", reason: o.reason || "" };
+    t.obs.push(entry);
+    var what = o.status === "verified" ? "Counted " + entry.count + " sealed units" + (entry.photo ? " with label photo" : " without label photo") :
+      o.status === "unverified" ? "Could not verify the count; last verified figure kept" :
+      o.status === "notfound" ? "Product not found (" + (o.reason || "reason not given") + ")" :
+      "Reported damaged units; segregated";
+    slog(st, id, "Rep", what);
+    if (o.status === "damaged" && !t.hold) {
+      t.hold = true; t.holdReason = "Rep reported damaged units";
+      slog(st, id, "System", "Quality hold raised; only quality can release it");
+    }
+    if (ACTIVE.indexOf(t.state) >= 0) {
+      var material = o.status !== "verified" || !before || entry.count !== before.count || !entry.photo;
+      if (material) {
+        t.review = "New observation after approval: " + what.charAt(0).toLowerCase() + what.slice(1) + ". Execution is paused until the BDE rechecks.";
+        slog(st, id, "System", "Execution paused for BDE review; history kept");
+      } else {
+        slog(st, id, "System", "No material change; execution continues");
+      }
+    }
+    return ok();
+  }
+
+  function approve(st, id) {
+    var t = st.T[id], c = compute(t);
+    if (t.state !== "open" && t.state !== "evidence") return no("Already decided");
+    if (!c.pass) return no("Every gate must pass before approval");
+    if (!reserve(st.ledger, t.demandId, c.distAlloc, c.need)) return no("Reservation refused: this demand is already reserved");
+    if (!reserve(st.ledger, t.demandId, c.q, c.need)) {
+      st.ledger[t.demandId] -= c.distAlloc;
+      slog(st, id, "System", "Reservation refused: this demand is already reserved");
+      return no("Reservation refused: this demand is already reserved");
+    }
+    t.approvedQ = c.q; t.approvedDist = c.distAlloc; t.state = "reserved";
+    slog(st, id, "BDE", "Approved " + c.q + " units" + (c.distAlloc ? " after allocating " + c.distAlloc + " distributor units" : ""));
+    slog(st, id, "System", "Reserved stock at " + t.origin + " and demand at " + t.dest);
+    return ok();
+  }
+
+  var NEXT = { reserved: "collected", collected: "inspected", inspected: "delivered" };
+  function advance(st, id, step) {
+    var t = st.T[id];
+    if (t.hold) return no("Paused: quality hold");
+    if (t.review) return no("Paused: BDE review needed");
+    if (NEXT[t.state] !== step) return no("Out of sequence");
+    t.state = step;
+    var q = t.approvedQ;
+    slog(st, id, "Distributor", step === "collected" ? "Collected " + q + " sealed units from " + t.origin :
+      step === "inspected" ? "Inspection passed: seal, batch and label confirmed" : "Delivered to " + t.dest + "; credit note and invoice linked");
+    return ok();
+  }
+
+  function resolveReview(st, id, choice) {
+    var t = st.T[id];
+    if (!t.review) return no("Nothing to review");
+    if (choice === "cancel") {
+      releaseAll(st, t); t.review = null; t.state = "rejected";
+      slog(st, id, "BDE", "Cancelled movement after the new observation; reservations released");
+      return ok();
+    }
+    if (t.hold) return no("Quality hold must be resolved first");
+    var probe = clone(t); probe.approvedQ = null; probe.approvedDist = null; probe.qOverride = null;
+    var c = compute(probe);
+    if (!c.countOK || !c.labelOK) return no("A fresh verified count with label photo is needed first");
+    var newQ = Math.min(t.approvedQ, c.atRisk);
+    if (newQ <= 0) return no("No units remain at risk; cancel the movement instead");
+    if (newQ < t.approvedQ) {
+      st.ledger[t.demandId] = Math.max(0, (st.ledger[t.demandId] || 0) - (t.approvedQ - newQ));
+      slog(st, id, "BDE", "Reduced movement from " + t.approvedQ + " to " + newQ + " units on the new count");
+      t.approvedQ = newQ;
+    } else {
+      slog(st, id, "BDE", "Rechecked the new observation; movement continues unchanged");
+    }
+    t.review = null;
+    return ok();
+  }
+
+  function recordSales(st, id, n, evidence) {
+    var t = st.T[id];
+    if (t.state !== "delivered" && t.state !== "partial") return no("Sales can be recorded only after delivery");
+    var open = t.approvedQ - t.sold - t.disposed;
+    var k = Math.max(0, Math.min(open, Math.floor(Number(n) || 0)));
+    if (k === 0) return no("Enter at least one verified sale");
+    t.sold += k; t.sales.push({ n: k, evidence: evidence || "Batch-linked POS records", at: stamp(st) });
+    slog(st, id, "Verifier", k + " consumer sales verified from " + (evidence || "batch-linked POS records").toLowerCase());
+    var left = t.approvedQ - t.sold - t.disposed;
+    if (left === 0) { t.state = "closed"; t.closedHow = "rescued"; slog(st, id, "System", "Closed: all " + t.approvedQ + " units rescued"); }
+    else { t.state = "partial"; slog(st, id, "System", left + " units stay open at " + t.dest + " under the same deadline"); }
+    return ok();
+  }
+
+  function disposeRemainder(st, id) {
+    var t = st.T[id];
+    if (t.state !== "partial") return no("Only an open partial outcome can be withdrawn");
+    var left = t.approvedQ - t.sold - t.disposed;
+    t.disposed += left; t.state = "closed"; t.closedHow = "partial";
+    slog(st, id, "Distributor", "Withdrew the remaining " + left + " units before the cutoff; recorded as disposition, not rescue");
+    return ok();
+  }
+
+  function qualityRelease(st, id) {
+    var t = st.T[id];
+    if (!t.hold) return no("No hold to release");
+    t.hold = false; t.holdReason = "";
+    if (t.label.kind === "unreadable" && t.labelOnRelease) t.label = t.labelOnRelease;
+    slog(st, id, "Quality", "Released after inspection: condition and label confirmed");
+    if (currentObs(t).status !== "verified") slog(st, id, "System", "A fresh verified count is still needed before approval");
+    return ok();
+  }
+  function qualityWithdraw(st, id) {
+    var t = st.T[id];
+    if (!t.hold) return no("No hold to confirm");
+    releaseAll(st, t); t.state = "closed"; t.closedHow = "withdrawn"; t.review = null;
+    slog(st, id, "Quality", "Hold confirmed; stock withdrawn for approved disposal");
+    return ok();
+  }
+  function requestEvidence(st, id) { var t = st.T[id]; if (t.state !== "open") return no("Not open"); t.state = "evidence"; slog(st, id, "BDE", "Requested more evidence"); return ok(); }
+  function reject(st, id) { var t = st.T[id]; if (t.state !== "open" && t.state !== "evidence") return no("Not open"); releaseAll(st, t); t.state = "rejected"; slog(st, id, "BDE", "Rejected movement; local action or disposition to follow"); return ok(); }
+
+  function status(t, c) {
+    if (t.state === "rejected") return { label: "Rejected", tone: "risk" };
+    if (t.state === "closed") {
+      if (t.closedHow === "withdrawn") return { label: "Withdrawn by quality", tone: "muted" };
+      if (t.closedHow === "partial") return { label: "Closed: " + t.sold + " rescued, " + t.disposed + " withdrawn", tone: "ok" };
+      return { label: "Rescued", tone: "ok" };
+    }
+    if (t.hold) return { label: "Quality hold", tone: "risk" };
+    if (t.review) return { label: "Review needed", tone: "risk" };
+    if (t.state === "partial") return { label: "Partly rescued: " + (t.approvedQ - t.sold - t.disposed) + " open", tone: "gold" };
+    if (t.state === "delivered") return { label: "Awaiting consumer sale", tone: "gold" };
+    if (t.state === "inspected") return { label: "Inspected: delivery due", tone: "ink" };
+    if (t.state === "collected") return { label: "Collected: inspection due", tone: "ink" };
+    if (t.state === "reserved") return { label: "Reserved: collection due", tone: "ink" };
+    if (t.state === "evidence" || !c.countOK || !c.labelOK) return { label: "Waiting for evidence", tone: "muted" };
+    if (c.atRisk === 0) return { label: "No units at risk", tone: "ok" };
+    if (c.q <= 0) return { label: "No destination: local action", tone: "muted" };
+    if (c.reduced) return { label: "Route at risk: reduce", tone: "risk" };
+    if (c.distAlloc > 0) return { label: "Distributor first", tone: "ink" };
+    return { label: "Awaiting BDE approval", tone: "gold" };
+  }
+
+  // ---------------- rule checks: every workflow the desk relies on ----------------
+  function runChecks() {
+    var out = [];
+    function add(group, name, pass, detail) { out.push({ group: group, name: name, pass: !!pass, detail: detail }); }
+    function fresh() { return newStore(); }
+    function base(id) { var st = fresh(); return st.T[id]; }
+
+    var a = compute(base("RR-001"));
+    add("Arithmetic", "Sale cutoff comes from the label", a.cutoff === d(2027, 1, 1) && a.W === 56,
+      "Use before 02/2027 ends 31 Jan 2027; less 30 days usage allowance = 1 Jan 2027, 56 days after the demo date");
+    add("Arithmetic", "Store A shows 16 units at risk", a.atRisk === 16, "max(0, 40 − floor(3 × 56 ÷ 7)) = " + a.atRisk);
+    add("Arithmetic", "With no distributor stock, the match is 12", a.q === 12, "min(16 at risk, 12 corroborated, 14 cap units) = " + a.q);
+    add("Arithmetic", "Last date to act is day 21", a.lastDate === 21, "56 − 28 days selling at B − 7 to move = " + a.lastDate);
+    var z = base("RR-001"); z.obs.push({ status: "verified", count: 20, photo: true, at: "test" });
+    add("Arithmetic", "A healthy outlet shows zero at risk, never negative", compute(z).atRisk === 0, "max(0, 20 − 24) = 0");
+
+    var b = base("RR-001"); b.dist = 5; var bc = compute(b);
+    add("Matching", "With 5 distributor units, retailer movement falls to 7", bc.distAlloc === 5 && bc.q === 7, "12 corroborated − 5 distributor = " + bc.q);
+    var cap = base("RR-001"); cap.dist = 5; cap.rB = 1; var cc = compute(cap);
+    add("Matching", "Distributor and exchange together never exceed destination capacity", cc.destCapTime === 7 && cc.distAlloc + cc.q <= 7 && cc.q === 2,
+      "B can sell 7 before cutoff; 5 distributor + " + cc.q + " exchanged = " + (cc.distAlloc + cc.q));
+    var sl = base("RR-001"); sl.rB = 1; var sc = compute(sl);
+    add("Matching", "A slower destination fails the original quantity", sc.askLast < 0 && sc.q === 7, "12 at 1 a week need 84 days; only " + sc.q + " fit");
+    add("Matching", "Exchange cap is 10% of prior 90-day purchase value", a.capValue === 6200 && a.capUnits === 14, "10% of ₹62,000 = ₹6,200 = 14 units at ₹420");
+    var lo = base("RR-001"); lo.purchases90 = 30000; var lc = compute(lo);
+    add("Matching", "A thin purchase history caps the exchange", lc.capUnits === 7 && lc.q === 7, "10% of ₹30,000 = ₹3,000 = 7 units");
+
+    var s1 = fresh(); var r1 = approve(s1, "RR-001");
+    var dup = clone(s1.T["RR-001"]); dup.id = "RR-009"; dup.state = "open"; dup.approvedQ = null; dup.approvedDist = null; s1.T["RR-009"] = dup;
+    var r2 = approve(s1, "RR-009");
+    add("Safeguards", "A duplicate reservation is rejected", r1.ok && !r2.ok, "A second ticket claiming the same 12 units of Store B demand is refused");
+    var s2 = fresh(); var h1 = approve(s2, "RR-004");
+    add("Safeguards", "A quality hold blocks approval", !h1.ok, "Condition gate fails; approve stays disabled");
+    var s3 = fresh(); observe(s3, "RR-001", { status: "damaged", count: 40, photo: true });
+    observe(s3, "RR-001", { status: "verified", count: 40, photo: true }); var h2 = approve(s3, "RR-001");
+    add("Safeguards", "A later stock count does not clear a quality hold", s3.T["RR-001"].hold && !h2.ok, "Damaged, then Present: hold stays; approval refused");
+    qualityRelease(s3, "RR-001"); var h3 = approve(s3, "RR-001");
+    add("Safeguards", "Only a quality release clears the hold", !s3.T["RR-001"].hold && h3.ok, "After quality releases it, the fresh count allows approval");
+    var s4 = fresh(); observe(s4, "RR-001", { status: "unverified" }); var u = compute(s4.T["RR-001"]); var u1 = approve(s4, "RR-001");
+    add("Safeguards", "“Cannot verify” blocks approval and keeps the last count", !u1.ok && u.lv && u.lv.count === 40 && !u.countOK, "Last verified 40 at " + (u.lv ? u.lv.at : "none") + "; renewed evidence required");
+
+    var s5 = fresh(); approve(s5, "RR-001"); advance(s5, "RR-001", "collected");
+    observe(s5, "RR-001", { status: "verified", count: 38, photo: true }); var t5 = s5.T["RR-001"]; var adv = advance(s5, "RR-001", "inspected");
+    add("Workflow", "Resubmission after approval keeps execution history", t5.state === "collected" && !!t5.review && !adv.ok, "Still collected; paused for BDE review; next step blocked");
+    resolveReview(s5, "RR-001", "continue");
+    add("Workflow", "BDE recheck resumes with a bounded quantity", !t5.review && t5.approvedQ === 12, "38 counted leaves 14 at risk; 12 still fit");
+    var s6 = fresh(); approve(s6, "RR-001"); ["collected", "inspected", "delivered"].forEach(function (x) { advance(s6, "RR-001", x); });
+    recordSales(s6, "RR-001", 10, "Batch-linked POS records"); var t6 = s6.T["RR-001"]; var mid = t6.state;
+    recordSales(s6, "RR-001", 2, "Stock reconciliation");
+    add("Workflow", "Partial sales keep the ticket open until the rest sell", mid === "partial" && t6.state === "closed" && t6.sold === 12, "10 verified: 2 stay open; 2 more verified: closed with 12 rescued");
+    var s7 = fresh(); approve(s7, "RR-001"); ["collected", "inspected", "delivered"].forEach(function (x) { advance(s7, "RR-001", x); });
+    recordSales(s7, "RR-001", 10); disposeRemainder(s7, "RR-001"); var t7 = s7.T["RR-001"];
+    add("Workflow", "Unsold remainder closes as disposition, never as rescue", t7.state === "closed" && t7.sold === 10 && t7.disposed === 2, "10 rescued; 2 withdrawn before cutoff");
+    return out;
+  }
+
+  // ---------------- screens ----------------
+  var app = document.getElementById("app");
+  var store, rep, selected, flash = "";
+  function chip(s) { return '<span class="chip t-' + s.tone + '">' + esc(s.label) + '</span>'; }
+
+  function resetAll() {
+    store = newStore();
+    rep = { choice: "present", count: 40, photo: true, nfReason: "Sold through", dProduct: "Kajal, black", dUnits: 6, dPeriod: "2 weeks",
+      dConfirm: false, exchange: true, stage: "submitted" };
+    selected = "RR-001"; flash = "";
+  }
+
+  function draftObs() {
+    var map = { present: "verified", notfound: "notfound", damaged: "damaged", unverified: "unverified" };
+    return { status: map[rep.choice], count: rep.count, photo: rep.photo, reason: rep.choice === "notfound" ? rep.nfReason : "" };
+  }
+
+  function viewVisit() {
+    var live = store.T["RR-001"];
+    var probe = clone(live); var o = draftObs();
+    probe.obs.push({ status: o.status, count: (o.status === "verified" || o.status === "damaged") ? Math.max(0, Number(o.count) || 0) : null, photo: !!o.photo, at: "draft" });
+    if (o.status === "damaged") probe.hold = true;
+    var c = compute(probe);
+    var counted = rep.choice === "present";
+    var asked = Math.max(0, Number(rep.dUnits) || 0), suggest = Math.min(asked, 4);
+
+    var supply = "";
+    if (counted) {
+      supply = '<div class="two"><div class="field"><label for="count">Sealed units here</label><input id="count" type="number" inputmode="numeric" min="0" max="200" value="' + esc(rep.count) + '"></div>' +
+        '<div class="field"><label for="batch">Batch and label</label><select id="batch"><option>B2611 · use before 02/2027</option></select></div></div>' +
+        '<label class="check"><input id="photo" type="checkbox"' + (rep.photo ? " checked" : "") + '> Label photo attached</label>';
+    } else if (rep.choice === "notfound") {
+      supply = '<div class="field"><label for="nf">Why is it not here?</label><select id="nf">' +
+        ["Sold through", "In the stockroom", "Bought from another supplier", "No longer wanted"].map(function (x) { return '<option' + (rep.nfReason === x ? " selected" : "") + '>' + x + '</option>'; }).join("") +
+        '</select></div><p class="instr">A missing product never creates an order on its own. The answer decides whether to replenish, re-place or drop it.</p>';
+    } else if (rep.choice === "damaged") {
+      supply = '<p class="instr risk">Segregate the damaged units, photograph them and report to quality. A quality hold stays until quality releases it; a later count cannot clear it.</p>';
+    } else {
+      supply = '<p class="instr">Recorded as unverified. The last verified count stays on the ticket with its date, a follow-up count is booked, and approval waits for it.</p>';
+    }
+    var instruction = counted ? (c.atRisk > 0 ? '<p class="instr"><b>Bring eligible older stock forward.</b> Do not add shade 220 until cover is checked.</p>' :
+      '<p class="instr">Stock is within what this shop can sell in time. No movement needed; keep the normal order.</p>') : "";
+
+    var line220 = counted && c.atRisk > 0 ? '<s>Foundation, shade 220 × 12</s><span class="why">Removed: cover is enough</span>' :
+      counted ? 'Foundation, shade 220 × 12<span class="why">As suggested</span>' :
+      rep.choice === "notfound" && rep.nfReason === "Sold through" ? 'Foundation, shade 220 × 12<span class="why">As suggested: sold through</span>' :
+      '<s>Foundation, shade 220 × 12</s><span class="why">Held until stock is checked</span>';
+    var qty220 = (counted && c.atRisk > 0) || (!counted && !(rep.choice === "notfound" && rep.nfReason === "Sold through")) ? 0 : 12;
+    var demandLine = rep.dConfirm ? esc(rep.dProduct) + '<span class="why">Retailer confirmed; suggested ' + suggest + ' of ' + asked + ' asked</span>' :
+      esc(rep.dProduct) + '<span class="why">Suggested ' + suggest + ' of ' + asked + ' asked; awaiting retailer confirmation</span>';
+
+    var stageIdx = { draft: 0, saved: 0, submitted: 2 }[rep.stage];
+    var verifiedLine = counted ? Math.max(0, Number(rep.count) || 0) + " sealed, today" :
+      (c.lv ? "Unverified today · last " + c.lv.count + " on " + c.lv.at : "None");
+
+    app.innerHTML =
+      '<div class="lead"><p>The rep confirms one nominated product and asks one demand question inside the normal order flow. This visit was submitted at 10:33; change an answer and resubmit to see how the desk responds.</p>' +
+      '<button class="ghost" data-act="reset">Reset demo</button></div>' +
+      '<section class="rep"><div class="phone" aria-label="Rep visit screen"><div class="notch"></div>' +
+        '<div class="visit-head"><div><h2>Store A</h2><p>Beat 4 · Today’s order · visit 3 of 14</p></div><span class="chip t-gold">2 checks</span></div>' +
+        '<div class="card"><p class="eyebrow">Check 1 · stock</p>' +
+          '<div class="prod" style="margin-top:6px"><div class="swatch" aria-hidden="true"></div><div><h3>Foundation, shade 220</h3><p class="muted" style="margin:0;font-size:13px">Confirm stock before ordering more</p></div></div>' +
+          '<div class="ctx"><span class="chip t-risk">Possible excess</span><span class="chip t-muted">Last checked 30 Oct</span><span class="chip t-muted">Count required</span></div>' +
+          '<div class="seg" role="group" aria-label="Stock check answer">' +
+            [["present", "Present"], ["notfound", "Not found"], ["damaged", "Damaged"], ["unverified", "Cannot verify"]].map(function (x) {
+              return '<button data-choice="' + x[0] + '" aria-pressed="' + (rep.choice === x[0]) + '">' + x[1] + '</button>'; }).join("") +
+          '</div>' + supply + instruction + '</div>' +
+        '<div class="card"><p class="eyebrow">Check 2 · demand</p>' +
+          '<h3 style="margin-top:4px">What did shoppers ask for that you could not supply since our last visit?</h3>' +
+          '<div class="field"><label for="dprod">Exact product and shade</label><input id="dprod" value="' + esc(rep.dProduct) + '"></div>' +
+          '<div class="two"><div class="field"><label for="dunits">Units asked</label><input id="dunits" type="number" min="0" value="' + esc(rep.dUnits) + '"></div>' +
+          '<div class="field"><label for="dperiod">Period</label><input id="dperiod" value="' + esc(rep.dPeriod) + '"></div></div>' +
+          '<p class="note">A shopper claim plus a shelf gap supports a small replenishment only: suggested ' + suggest + ' units, capped at 4 until a second source corroborates more.</p>' +
+          '<label class="check"><input id="dconfirm" type="checkbox"' + (rep.dConfirm ? " checked" : "") + '> Retailer confirms adding ' + suggest + ' to this order</label>' +
+        '</div>' +
+        '<div class="card order"><p class="eyebrow">Order correction</p><ul>' +
+          '<li><span>' + line220 + '</span><span class="num">' + qty220 + '</span></li>' +
+          '<li><span>' + demandLine + '</span><span class="num">' + (rep.dConfirm ? suggest : 0) + '</span></li>' +
+          '<li><span>Micellar water, 125 ml<span class="why">As suggested</span></span><span class="num">6</span></li>' +
+        '</ul>' + (counted && c.atRisk > 0 ? '<label class="check"><input id="exch" type="checkbox"' + (rep.exchange ? " checked" : "") + '> Request early exchange review for the excess</label>' : "") + '</div>' +
+        '<div class="submit"><button class="btn" data-act="submit">' + (rep.stage === "submitted" ? "Resubmit observations" : "Save observations and continue order") + '</button>' +
+          '<div class="state" aria-label="Save status">' + ["Saved on phone", "Submitted", "On ticket RR-001"].map(function (x, i) { return '<span' + (i === stageIdx ? ' aria-current="step"' : '') + '>' + (i ? "· " : "") + x + '</span>'; }).join("") + '</div>' +
+          (flash ? '<p class="instr">' + flash + ' <a href="#desk">Open the BDE desk</a></p>' : "") +
+        '</div>' +
+      '</div>' +
+      '<div class="calc"><p class="eyebrow">What the system calculates</p><h2>Runway for shade 220 at Store A</h2>' +
+        '<div class="big"><div><strong class="num">' + c.localCap + '</strong><span>local capacity</span></div>' +
+          '<div class="r"><strong class="num">' + (counted ? c.atRisk : "~" + c.atRisk) + '</strong><span>units at risk' + (counted ? "" : " (estimate)") + '</span></div>' +
+          '<div class="g"><strong class="num">' + (c.pass ? c.q : 0) + '</strong><span>units proposed to move</span></div></div>' +
+        '<table>' +
+          '<tr><td>Verified units<span class="f">sealed only, with label photo</span></td><td>' + esc(verifiedLine) + '</td></tr>' +
+          '<tr><td>Velocity<span class="f">conservative, from DMS billing</span></td><td>3 a week</td></tr>' +
+          '<tr><td>Approved sale cutoff<span class="f">use before 02/2027 → last use 31 Jan; less 30 days usage allowance</span></td><td>' + fdate(c.cutoff) + '</td></tr>' +
+          '<tr><td>Eligible selling days left<span class="f">from demo date 6 Nov 2026</span></td><td>' + c.W + '</td></tr>' +
+          '<tr><td>Local capacity<span class="f">floor(3 × ' + c.W + ' ÷ 7)</span></td><td>' + c.localCap + '</td></tr>' +
+          '<tr><td>Units at risk<span class="f">max(0, ' + c.Q + ' − ' + c.localCap + ')</span></td><td>' + c.atRisk + '</td></tr>' +
+          '<tr><td>Exchange cap<span class="f">10% of ₹62,000 prior 90-day purchases ÷ ₹420 a unit</span></td><td>' + c.capUnits + ' units</td></tr>' +
+        '</table>' +
+        (rep.choice === "damaged" ? '<div class="match"><b>Quality hold.</b> No commercial action until quality inspects. A later count will not clear the hold.</div>' :
+         !counted ? '<div class="match"><b>Waiting for evidence.</b> The estimate uses the last verified count. Nothing moves until a fresh count with a label photo arrives.</div>' :
+         !rep.photo ? '<div class="match"><b>Label photo missing.</b> The traceability gate fails until it is attached.</div>' :
+         c.atRisk > 0 ? '<div class="match"><b>Match.</b> Store B asked for ' + live.reported + '; a shelf gap and an unfilled order support ' + live.supported + '. Distributor holds ' + live.dist + ' eligible. Proposed: <b>' + c.q + ' units</b>, leaving ' + (c.atRisk - c.q) + ' at risk for a local fix. Last date to act: <b>day ' + c.lastDate + '</b>, ' + fshort(TODAY + c.lastDate * DAY) + '. Exchange is not guaranteed until every gate passes.</div>' :
+         '<div class="match">Nothing is at risk at this count, so nothing moves. Units at risk never go below zero.</div>') +
+      '</div></section>';
+  }
+
+  function timeline(t, c) {
+    if (c.q <= 0 || t.hold || !c.labelOK || c.W === 0) {
+      return '<p class="muted" style="margin:0">No movement can be scheduled while ' + (t.hold ? "the quality hold stands" : !c.labelOK ? "the label is unreadable" : "no feasible quantity exists") + '.</p>';
+    }
+    var W = c.W, last = c.lastDate, arr = last + t.L;
+    if (last < 0) return '<p class="muted" style="margin:0">The approved quantity no longer fits before the cutoff. Recheck the ticket.</p>';
+    var p = function (x) { return 100 * x / W; };
+    var lastLabel = last === 0 ? "Today is the last date to act" : "Last date to act · day " + last + " · " + fshort(TODAY + last * DAY);
+    var flag = p(last) <= 55 ? '<span class="flag mark l" style="left:' + p(last) + '%">' + lastLabel + '</span>' : '<span class="flag mark rgt" style="right:' + (100 - p(last)) + '%">' + lastLabel + '</span>';
+    var sells = c.destUnits + (c.distAlloc ? " (" + c.distAlloc + " from the distributor, " + c.q + " exchanged)" : "");
+    return '<div class="tl" role="img" aria-label="Act by day ' + last + ', arrive by day ' + arr + ', sell by day ' + W + '">' +
+      (last > 0 ? '<span class="flag" style="left:0">Today</span>' : "") + flag +
+      '<div class="tl-bar"><i style="width:' + p(last) + '%;background:var(--gold-fill)"></i><i style="width:' + p(t.L) + '%;background:var(--move)"></i><i style="width:' + p(W - arr) + '%;background:var(--ink)"></i></div>' +
+      '<span class="start">Day 0 · ' + fshort(TODAY) + '</span><span class="end">Approved sale cutoff · day ' + W + ' · ' + fshort(c.cutoff) + '</span></div>' +
+      '<div class="legend">' + (last > 0 ? '<span><i style="background:var(--gold-fill)"></i>Day 0 to ' + last + ': slack. Act on the next feasible route.</span>' : "") +
+      '<span><i style="background:var(--move)"></i>Day ' + last + ' to ' + arr + ': verify, approve, collect and deliver (' + t.L + ' days)</span>' +
+      '<span><i style="background:var(--ink)"></i>Day ' + arr + ' to ' + W + ': ' + t.dest + ' sells ' + sells + ' at ' + t.rB + ' a week (' + c.destDays + ' days)</span></div>';
+  }
+
+  function stockLine(t, c) {
+    var cur = c.cur;
+    if (cur.status === "verified") return cur.count + " sealed units · verified " + cur.at + (cur.photo ? " · label photo" : " · <b>label photo missing</b>");
+    var last = c.lv ? "last verified " + c.lv.count + " on " + c.lv.at : "no verified count";
+    if (cur.status === "unverified") return "<b>Unverified</b> on " + cur.at + " · " + last;
+    if (cur.status === "notfound") return "<b>Not found</b> on " + cur.at + " (" + esc(cur.reason) + ") · " + last;
+    return "<b>Damage reported</b> on " + cur.at + " · " + (cur.count != null ? cur.count + " units segregated" : "units segregated");
+  }
+
+  function viewDesk() {
+    var T = store.T, ids = Object.keys(T);
+    var done = function (t) { return t.state === "closed" || t.state === "rejected"; };
+    var holds = ids.filter(function (id) { return T[id].hold && !done(T[id]); });
+    var rest = ids.filter(function (id) { return holds.indexOf(id) < 0; }).sort(function (a, b) {
+      var da = done(T[a]) ? 1 : 0, db = done(T[b]) ? 1 : 0; if (da !== db) return da - db;
+      return compute(T[a]).lastDate - compute(T[b]).lastDate;
+    });
+    function sub(t, c) {
+      if (t.state === "closed") return "Closed";
+      if (t.state === "rejected") return "Rejected";
+      if (t.hold) return "Blocked until quality decides";
+      if (t.review) return "Paused for BDE review";
+      if (t.state === "partial") return (t.approvedQ - t.sold - t.disposed) + " units still open";
+      if (t.state === "delivered") return "Awaiting verified sales";
+      if (ACTIVE.indexOf(t.state) >= 0) return "In progress";
+      if (!c.countOK || !c.labelOK) return "Needs a fresh verified count";
+      return c.q > 0 ? (c.lastDate <= 0 ? "Act today" : c.lastDate + " days of slack") : "No feasible move";
+    }
+    function qitem(id) {
+      var t = T[id], c = compute(t);
+      return '<button class="qitem" data-sel="' + id + '" aria-current="' + (id === selected) + '"><span class="qtop"><span class="mono">' + id + '</span>' + chip(status(t, c)) + '</span>' +
+        '<span class="p">' + esc(t.product) + '</span><span class="s">' + t.origin + ' → ' + t.dest + ' · ' + sub(t, c) + '</span></button>';
+    }
+    var t = T[selected], c = compute(t), s = status(t, c);
+    var open = t.state === "open" || t.state === "evidence";
+
+    var reco;
+    if (t.state === "closed" || t.state === "rejected") reco = "";
+    else if (t.hold) reco = '<p class="reco"><b>Blocked.</b> ' + esc(t.holdReason) + '. Quality must rule on condition and label before any commercial action.</p>';
+    else if (t.review) reco = "";
+    else if (!open) reco = '<p class="reco">Approved: ' + (t.approvedDist ? t.approvedDist + " distributor units and " : "") + t.approvedQ + ' exchanged units are reserved. Follow the distributor tasks below.</p>';
+    else if (!c.countOK || !c.labelOK) reco = '<p class="reco"><b>Waiting for evidence.</b> ' + (c.labelOK ? "The latest count is not verified. The estimate below uses the last verified figure; approval needs a fresh count with a label photo." : "The label is unreadable; quality must confirm it.") + '</p>';
+    else if (c.atRisk === 0) reco = '<p class="reco">No units at risk. Close with no action.</p>';
+    else if (c.q <= 0) reco = '<p class="reco"><b>No movement.</b> No corroborated demand or destination capacity remains after distributor stock. Fix locally, correct the next order, or plan disposition before the deadline.</p>';
+    else if (c.reduced) reco = '<p class="reco"><b>Reduce to ' + c.q + ' units.</b> All ' + c.ask + ' would need ' + weeksToDays(c.distAlloc + c.ask, t.rB) + ' days at ' + t.dest + ' and miss the cutoff by ' + (-c.askLast) + ' days. ' + c.q + ' fit only if moved ' + (c.lastDate === 0 ? "on today’s route" : "within " + c.lastDate + " days") + '. The other ' + (c.atRisk - c.q) + ' need a local fix or disposition.</p>';
+    else if (c.distAlloc > 0) reco = '<p class="reco"><b>Distributor first.</b> Allocate ' + c.distAlloc + ' distributor units to ' + t.dest + ', then exchange ' + c.q + ' from ' + t.origin + '; together they fit the ' + c.destCapTime + ' units ' + t.dest + ' can sell before cutoff. ' + (c.atRisk - c.q) + ' stay at risk at ' + t.origin + '.</p>';
+    else reco = '<p class="reco"><b>Exchange ' + c.q + ' units</b> from ' + t.origin + ' to ' + t.dest + ' through the distributor' + (c.capBinds ? ", limited by the retailer’s 10% cap" : "") + '. ' + (c.atRisk - c.q) + ' stay at risk at ' + t.origin + ' for a local fix.</p>';
+
+    var decide = "";
+    if (open && !t.hold) {
+      decide = '<div class="decide"><div class="field"><label for="qty">Units to move</label><input id="qty" type="number" min="1" max="' + c.feasible + '" value="' + c.q + '"' + (c.feasible <= 0 ? " disabled" : "") + '></div>' +
+        '<button class="btn" data-act="approve"' + (c.pass ? "" : " disabled") + '>Approve ' + c.q + ' units</button>' +
+        '<button class="btn alt" data-act="evidence"' + (t.state === "evidence" ? " disabled" : "") + '>Request evidence</button>' +
+        '<button class="btn warn" data-act="reject">Reject</button></div>' +
+        (!c.pass ? '<p class="blocked">Approval stays disabled until every gate passes.</p>' : "");
+    }
+    var quality = (t.hold && !(t.state === "closed" || t.state === "rejected")) ?
+      '<div class="qpanel"><p class="eyebrow" style="margin:0">Quality team decides</p><p style="margin:0">Only quality can lift a hold. A new count from the field cannot clear it.</p>' +
+      '<div class="row"><button class="btn alt" data-act="q-release">Release: condition and label confirmed</button><button class="btn warn" data-act="q-withdraw">Confirm hold and withdraw</button></div></div>' : "";
+    var review = (t.review && !(t.state === "closed" || t.state === "rejected")) ?
+      '<div class="banner"><span><b>Review needed.</b> ' + esc(t.review) + '</span><div class="row"><button class="btn alt" data-act="rv-continue">Recheck and continue</button><button class="btn warn" data-act="rv-cancel">Cancel movement</button></div></div>' : "";
+
+    var stepsDone = { reserved: 1, collected: 2, inspected: 3, delivered: 4, partial: 4, closed: 4 }[t.state] || 0;
+    var distributor = "";
+    if (t.approvedQ != null && t.state !== "rejected" && !(t.state === "closed" && t.closedHow === "withdrawn")) {
+      var paused = t.hold || t.review;
+      var steps = [["Reserve", (t.approvedDist ? t.approvedDist + " distributor + " : "") + t.approvedQ + " exchanged units held against " + t.demandId, null],
+        ["Collect", "Pick up " + t.approvedQ + " sealed units from " + t.origin + " on the next route", "collected"],
+        ["Inspect", "Check seal, batch and label at the distributor", "inspected"],
+        ["Deliver", "Deliver to " + t.dest + "; credit note and invoice linked", "delivered"]];
+      distributor = '<section class="sec"><h3>Distributor tasks</h3><div class="steps">' + steps.map(function (st, i) {
+        var isDone = i < stepsDone, next = i === stepsDone;
+        return '<div class="step' + (isDone ? " done" : "") + '"><span><b>' + st[0] + '</b><br>' + st[1] + '</span>' +
+          (isDone ? '<em>Done</em>' : (st[2] ? '<button class="btn alt" data-adv="' + st[2] + '"' + (next && !paused ? "" : " disabled") + '>Mark ' + st[0].toLowerCase() + 'ed</button>' : "")) + '</div>';
+      }).join("") + '</div>' + (paused && stepsDone < 4 ? '<p class="paused">Paused: ' + (t.hold ? "quality hold" : "BDE review") + ' must be resolved first.</p>' : "") + '</section>';
+    }
+
+    var outcomeSec = "";
+    if (["delivered", "partial", "closed"].indexOf(t.state) >= 0 && t.approvedQ != null && t.closedHow !== "withdrawn") {
+      var left = t.approvedQ - t.sold - t.disposed;
+      outcomeSec = '<section class="sec"><h3>Outcome</h3>' +
+        ((t.state === "delivered" || t.state === "partial") ?
+          '<p style="margin:0 0 10px"><span class="sim">Simulated verification</span> In a live system these figures come from the evidence source, not typed in.</p>' +
+          '<div class="outcome"><div class="field wide"><label for="evid">Evidence source</label><select id="evid"><option>Batch-linked POS records</option><option>Stock reconciliation: opening + receipts − closing, returns and transfers</option></select></div>' +
+          '<div class="field"><label for="sold">Verified sales in this check</label><input id="sold" type="number" min="1" max="' + left + '" value="' + Math.min(t.sold ? left : 10, left) + '"></div>' +
+          '<button class="btn" data-act="record">Record verified sales</button></div>' : "") +
+        '<p class="result"><b>' + t.sold + ' rescued</b> of ' + t.approvedQ + ' moved' + (t.disposed ? ' · ' + t.disposed + ' withdrawn as disposition, not rescue' : '') + (left > 0 ? ' · <b>' + left + ' still open</b> at ' + t.dest + ' until ' + fshort(c.cutoff) : '') + '.</p>' +
+        (t.sales.length ? '<ul class="hist">' + t.sales.map(function (x) { return '<li><span>' + x.n + ' verified · ' + esc(x.evidence) + '</span><span class="mono">' + x.at + '</span></li>'; }).join("") + '</ul>' : "") +
+        (t.state === "partial" ? '<div class="row" style="margin-top:10px"><button class="btn warn" data-act="dispose">Withdraw remaining ' + left + ' before cutoff</button></div>' : "") +
+        '</section>';
+    }
+
+    app.innerHTML =
+      '<div class="lead"><p>Safety holds sit apart from commercial work, which is sorted by deadline. Select a ticket to see why units are at risk, which gates pass and what to approve.</p><button class="ghost" data-act="reset">Reset demo</button></div>' +
+      '<section class="desk"><div class="queue">' +
+        (holds.length ? '<div style="display:grid;gap:8px"><h3 class="eyebrow">Safety holds</h3>' + holds.map(qitem).join("") + '</div>' : "") +
+        '<div style="display:grid;gap:8px"><h3 class="eyebrow">Commercial · by deadline</h3>' + rest.map(qitem).join("") + '</div></div>' +
+      '<article class="ticket" aria-label="Ticket ' + t.id + '">' +
+        '<div class="thead"><div><p class="mono" style="margin:0">' + t.id + ' · batch ' + t.batch + '</p><h2>' + esc(t.product) + '</h2><p>' + t.origin + ' → ' + t.dest + ' · ' + esc(t.opened) + '</p></div>' + chip(s) + '</div>' +
+        (flash ? '<p class="instr" style="margin-top:12px">' + flash + '</p>' : "") + review +
+        '<section class="sec"><h3>Deadline</h3>' + timeline(t, c) + '</section>' +
+        '<section class="sec"><h3>Evidence</h3><dl class="facts">' +
+          '<div><dt>Stock at ' + t.origin + '</dt><dd>' + stockLine(t, c) + '</dd></div>' +
+          '<div><dt>Label and cutoff</dt><dd>' + (c.labelOK ? labelText(t.label) + ' → last use ' + fshort(lastUse(t.label)) + '; less ' + t.allowance + ' days usage allowance → sale cutoff ' + fdate(c.cutoff) + ' (' + c.W + ' days)' : "Label unreadable · cutoff set by quality after inspection") + '</dd></div>' +
+          '<div><dt>Local capacity and risk</dt><dd>' + c.localCap + ' can sell locally · <b>' + c.atRisk + ' at risk</b>' + (c.countOK ? "" : " (from last verified count)") + '</dd></div>' +
+          '<div><dt>Demand at ' + t.dest + '</dt><dd>' + t.reported + ' asked · ' + c.corroborated + ' corroborated · ' + t.inbound + ' inbound</dd></div>' +
+          '<div><dt>Corroboration</dt><dd>' + esc(t.demandEvidence) + '</dd></div>' +
+          '<div><dt>Destination capacity</dt><dd>' + c.destCapTime + ' units can sell at ' + t.dest + ' before cutoff' + (c.distAlloc ? '; ' + c.distAlloc + ' taken by distributor stock' : '') + '</dd></div>' +
+          '<div><dt>Distributor stock</dt><dd>' + t.dist + ' eligible · ' + c.distAlloc + ' allocated · checked today</dd></div>' +
+          '<div><dt>Exchange cap</dt><dd>10% of ₹' + fmt(t.purchases90) + ' prior 90-day net purchases = ₹' + fmt(c.capValue) + ' → ' + c.capUnits + ' units at ₹' + fmt(t.unitValue) + '</dd></div>' +
+          '<div><dt>Value (illustrative)</dt><dd>' + (c.q > 0 && !t.hold ? '₹' + fmt(c.q * t.lossPerUnit) + ' loss avoided − ₹' + fmt(t.execCost) + ' cost = <b>₹' + fmt(c.value) + '</b>' : "Not assessed") + '</dd></div>' +
+        '</dl></section>' +
+        '<section class="sec"><h3>Five gates</h3><div class="gates">' + c.gates.map(function (g) { return '<span class="gate ' + (g.ok ? "ok" : "no") + '"><b>' + (g.ok ? "Pass" : "Fail") + '</b> ' + g.k + ' <small>' + g.why + '</small></span>'; }).join("") + '</div>' +
+          reco + quality + decide + '</section>' +
+        distributor + outcomeSec +
+        '<section class="sec"><h3>Audit trail</h3><ol class="log">' + t.log.map(function (l) { return '<li><time>' + l.t + '</time><span><b>' + l.who + '.</b> ' + esc(l.what) + '</span></li>'; }).join("") + '</ol></section>' +
+      '</article></section>';
+  }
+
+  function viewRules() {
+    var res = runChecks(), passed = res.filter(function (r) { return r.pass; }).length;
+    var groups = ["Arithmetic", "Matching", "Safeguards", "Workflow"];
+    app.innerHTML =
+      '<div class="lead"><p>These checks run in your browser on every load. They drive the same workflow actions the desk uses, end to end. ' + passed + ' of ' + res.length + ' pass.</p></div>' +
+      '<section class="rules"><div class="tablebox"><table><thead><tr><th>Check</th><th>Result</th><th>Working</th></tr></thead><tbody>' +
+        groups.map(function (g) {
+          return '<tr><td colspan="3" class="eyebrow" style="background:var(--sunk)">' + g + '</td></tr>' + res.filter(function (r) { return r.group === g; }).map(function (r) {
+            return '<tr><td>' + esc(r.name) + '</td><td class="' + (r.pass ? "pass" : "fail") + '">' + (r.pass ? "Pass" : "Fail") + '</td><td class="muted">' + esc(r.detail) + '</td></tr>'; }).join("");
+        }).join("") +
+      '</tbody></table></div>' +
+      '<div class="formulas"><p class="eyebrow">The rules</p><h2>Plain arithmetic, no model</h2>' +
+        '<p>Approved sale cutoff<code>last permitted use from the label − usage allowance set by quality</code></p>' +
+        '<p>Units at risk<code>max(0, last verified units − floor(velocity × selling days ÷ 7))</code></p>' +
+        '<p>Distributor first<code>min(distributor stock, corroborated need, destination capacity)</code></p>' +
+        '<p>Retailer exchange<code>min(units at risk, need left after distributor, 10% purchase cap, destination capacity left after distributor)</code></p>' +
+        '<p>Last date to act<code>cutoff − days for the destination to sell everything sent − days to verify, approve and deliver</code></p>' +
+        '<p>Rescued<code>units verified as sold to consumers; unsold units close as disposition</code></p>' +
+        '<p>Holds<code>only quality releases a hold; field observations never clear it</code></p>' +
+      '</div></section>';
+  }
+
+  // ---------------- routing and events ----------------
+  var VIEWS = { visit: viewVisit, desk: viewDesk, rules: viewRules };
+  function current() { var h = (location.hash || "").replace("#", ""); return VIEWS[h] ? h : "visit"; }
+  function render() {
+    var v = current();
+    document.querySelectorAll(".views a").forEach(function (a) { if (a.dataset.view === v) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current"); });
+    VIEWS[v]();
+  }
+  window.addEventListener("hashchange", function () { flash = ""; render(); window.scrollTo(0, 0); });
+
+  function run(res, okMsg) { flash = res.ok ? (okMsg || "") : "<b>Not done.</b> " + res.msg + "."; render(); }
+
+  app.addEventListener("click", function (e) {
+    var el = e.target.closest("[data-choice],[data-sel],[data-act],[data-adv]");
+    if (!el) return;
+    if (el.dataset.choice) { rep.choice = el.dataset.choice; rep.stage = "saved"; flash = ""; render(); return; }
+    if (el.dataset.sel) {
+      selected = el.dataset.sel; flash = ""; render();
+      if (window.innerWidth < 980) { var tk = document.querySelector(".ticket"); if (tk) tk.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); }
+      return;
+    }
+    if (el.dataset.adv) { run(advance(store, selected, el.dataset.adv)); return; }
+    var act = el.dataset.act;
+    if (act === "reset") { resetAll(); render(); return; }
+    if (act === "submit") {
+      observe(store, "RR-001", draftObs());
+      slog(store, "RR-001", "Rep", "Shopper request: " + rep.dProduct + ", " + (Number(rep.dUnits) || 0) + " units in " + rep.dPeriod + (rep.dConfirm ? "; retailer confirmed " + Math.min(Number(rep.dUnits) || 0, 4) + " added" : "; not added yet"));
+      rep.stage = "submitted"; selected = "RR-001";
+      var t = store.T["RR-001"];
+      flash = t.review ? "Observation added to RR-001. The ticket was already approved, so execution is paused for BDE review." :
+        t.hold ? "Observation added to RR-001. The quality hold stays until quality releases it." :
+        "Observation added to RR-001. Exchange is not guaranteed until every gate passes.";
+      render(); return;
+    }
+    if (act === "approve") return run(approve(store, selected), "Approved and reserved.");
+    if (act === "evidence") return run(requestEvidence(store, selected));
+    if (act === "reject") return run(reject(store, selected));
+    if (act === "q-release") return run(qualityRelease(store, selected), "Quality released the hold.");
+    if (act === "q-withdraw") return run(qualityWithdraw(store, selected));
+    if (act === "rv-continue") return run(resolveReview(store, selected, "continue"));
+    if (act === "rv-cancel") return run(resolveReview(store, selected, "cancel"));
+    if (act === "record") {
+      var n = (document.getElementById("sold") || {}).value, ev = (document.getElementById("evid") || {}).value;
+      return run(recordSales(store, selected, n, ev));
+    }
+    if (act === "dispose") return run(disposeRemainder(store, selected));
+  });
+
+  app.addEventListener("change", function (e) {
+    var id = e.target.id;
+    if (id === "count") { rep.count = e.target.value; rep.stage = "saved"; render(); var n = document.getElementById("count"); if (n) n.focus(); }
+    else if (id === "photo") { rep.photo = e.target.checked; rep.stage = "saved"; render(); }
+    else if (id === "exch") { rep.exchange = e.target.checked; rep.stage = "saved"; }
+    else if (id === "nf") { rep.nfReason = e.target.value; rep.stage = "saved"; render(); }
+    else if (id === "dprod") { rep.dProduct = e.target.value; rep.stage = "saved"; render(); }
+    else if (id === "dunits") { rep.dUnits = e.target.value; rep.stage = "saved"; render(); }
+    else if (id === "dperiod") { rep.dPeriod = e.target.value; rep.stage = "saved"; }
+    else if (id === "dconfirm") { rep.dConfirm = e.target.checked; rep.stage = "saved"; render(); }
+    else if (id === "qty") {
+      var t = store.T[selected]; t.qOverride = null; var c0 = compute(t);
+      var v = Math.max(1, Math.min(c0.feasible, Number(e.target.value) || 1));
+      t.qOverride = v; slog(store, selected, "BDE", "Set quantity to " + v + " units"); render();
+    }
+  });
+
+  resetAll();
+  render();
+})();
+</script>
+</body>
+</html>
